@@ -125,7 +125,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4600);
   }, []);
 
-  const addLog = (x: Data, kind: LogLine["kind"], text: string, at = Date.now()): LogLine[] => [{ id: `l${seq.current++}`, at, kind, text }, ...x.log].slice(0, 400);
+  const addLog = (x: Data, kind: LogLine["kind"], text: string, at = Date.now()): LogLine[] => [{ id: `n${seq.current++}`, at, kind, text }, ...x.log].slice(0, 400);
 
   // first load: the book arrives after a short wait, like any API
   useEffect(() => {
@@ -151,7 +151,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const kicked = x.events.filter((e) => e.startsAt <= now && !seen.current.has(e.id));
       for (const e of kicked) {
         seen.current.add(e.id);
-        lines.push({ id: `l${seq.current++}`, at: e.startsAt, kind: "lock", text: `Book closed at kickoff: ${e.home} v ${e.away}` });
+        lines.push({ id: `n${seq.current++}`, at: e.startsAt, kind: "lock", text: `Book closed at kickoff: ${e.home} v ${e.away}` });
         const ids = new Set(x.markets.filter((m) => m.eventId === e.id).map((m) => m.id));
         const dropped = x.slip.some((l) => ids.has(l.marketId));
         if (dropped) toast("info", `${e.home} v ${e.away} kicked off, so it left your slip. The contract no longer takes bets on it.`);
@@ -164,7 +164,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const finals = x.results.filter((r) => r.state === "window" && r.windowEnds <= now);
       for (const r of finals) {
         const e = x.events.find((v) => v.id === r.eventId)!;
-        lines.push({ id: `l${seq.current++}`, at: now, kind: "settle", text: `Window closed with no open dispute: ${e.home} ${r.score} ${e.away} is final, payouts released` });
+        lines.push({ id: `n${seq.current++}`, at: now, kind: "settle", text: `Window closed with no open dispute: ${e.home} ${r.score} ${e.away} is final, payouts released` });
         const mineWin = x.bets.some((b) => b.eventId === r.eventId && b.wallet === ME && b.status === "locked" && r.outcome[b.marketId] === b.selectionId);
         if (mineWin) toast("ok", `${e.home} v ${e.away} is final. Your winnings are ready to claim.`);
         pulse({ kind: "final" });
@@ -374,7 +374,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         for (const b of placed) {
           const m = y.markets.find((v) => v.id === b.marketId)!;
           const s = m.selections.find((v) => v.id === b.selectionId)!;
-          log = [{ id: `l${seq.current++}`, at: Date.now(), kind: "bet" as const, text: `${b.stake} USDT on ${s.label} at ${fmtOdds(b.odds)}, block ${money(b.block)}` }, ...log];
+          log = [{ id: `n${seq.current++}`, at: Date.now(), kind: "bet" as const, text: `${b.stake} USDT on ${s.label} at ${fmtOdds(b.odds)}, block ${money(b.block)}` }, ...log];
         }
         const keep = y.slip.filter((l) => !placed.find((b) => b.selectionId === l.selectionId) && !lines.find((z) => z.selectionId === l.selectionId));
         return { ...y, bets: [...y.bets, ...placed], wallet: { ...y.wallet, usdt: Math.round((y.wallet.usdt - spent) * 100) / 100, eth: Math.max(0, y.wallet.eth - 0.0004 * placed.length) }, slip: keep, log, focus: placed[0]?.marketId ?? y.focus };
