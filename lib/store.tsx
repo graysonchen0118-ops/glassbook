@@ -139,51 +139,51 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(timer);
   }, [set]);
 
-  // the clock: kickoffs close the book, dispute windows run out
+  // the clock: kickoffs close the book, dispute windows run out.
+  // Side effects read the last rendered state; the state change itself is applied on top of the
+  // latest state, so nothing queued in between (an odds edit, a bet) is ever overwritten.
   useEffect(() => {
     if (!d.ready) return;
     const id = setInterval(() => {
       const now = Date.now();
       const x = ref.current;
-      let next: Data = { ...x, now };
-      for (const e of x.events) {
-        if (e.startsAt <= now && !seen.current.has(e.id)) {
-          seen.current.add(e.id);
-          next = { ...next, log: addLog(next, "lock", `Book closed at kickoff: ${e.home} v ${e.away}`, e.startsAt) };
-          const ids = new Set(next.markets.filter((m) => m.eventId === e.id).map((m) => m.id));
-          const dropped = next.slip.filter((l) => ids.has(l.marketId));
-          if (dropped.length) {
-            next = { ...next, slip: next.slip.filter((l) => !ids.has(l.marketId)) };
-            toast("info", `${e.home} v ${e.away} kicked off, so it left your slip. The contract no longer takes bets on it.`);
-          }
-          if (ids.has(next.focus)) {
-            pulse({ kind: "lock" });
-            if (!dropped.length) toast("info", `Kickoff. The contract closed the book on ${e.home} v ${e.away}.`);
-          }
+      const lines: LogLine[] = [];
+      const kicked = x.events.filter((e) => e.startsAt <= now && !seen.current.has(e.id));
+      for (const e of kicked) {
+        seen.current.add(e.id);
+        lines.push({ id: `l${seq.current++}`, at: e.startsAt, kind: "lock", text: `Book closed at kickoff: ${e.home} v ${e.away}` });
+        const ids = new Set(x.markets.filter((m) => m.eventId === e.id).map((m) => m.id));
+        const dropped = x.slip.some((l) => ids.has(l.marketId));
+        if (dropped) toast("info", `${e.home} v ${e.away} kicked off, so it left your slip. The contract no longer takes bets on it.`);
+        if (ids.has(x.focus)) {
+          pulse({ kind: "lock" });
+          if (!dropped) toast("info", `Kickoff. The contract closed the book on ${e.home} v ${e.away}.`);
         }
       }
-      let changed = false;
-      const results = next.results.map((r) => {
-        if (r.state === "window" && r.windowEnds <= now) {
-          changed = true;
-          return { ...r, state: "final" as const };
+      const kickedMarkets = new Set(x.markets.filter((m) => kicked.some((e) => e.id === m.eventId)).map((m) => m.id));
+      const finals = x.results.filter((r) => r.state === "window" && r.windowEnds <= now);
+      for (const r of finals) {
+        const e = x.events.find((v) => v.id === r.eventId)!;
+        lines.push({ id: `l${seq.current++}`, at: now, kind: "settle", text: `Window closed with no open dispute: ${e.home} ${r.score} ${e.away} is final, payouts released` });
+        const mineWin = x.bets.some((b) => b.eventId === r.eventId && b.wallet === ME && b.status === "locked" && r.outcome[b.marketId] === b.selectionId);
+        if (mineWin) toast("ok", `${e.home} v ${e.away} is final. Your winnings are ready to claim.`);
+        pulse({ kind: "final" });
+      }
+      const finalIds = new Set(finals.map((r) => r.eventId));
+      set((y) => {
+        if (!kicked.length && !finalIds.size) return { ...y, now };
+        let results = y.results;
+        let bets = y.bets;
+        if (finalIds.size) {
+          results = y.results.map((r) => (finalIds.has(r.eventId) && r.state === "window" && r.windowEnds <= now ? { ...r, state: "final" as const } : r));
+          const done = new Map(results.filter((r) => finalIds.has(r.eventId) && r.state === "final").map((r) => [r.eventId, r]));
+          bets = y.bets.map((b) => {
+            const r = done.get(b.eventId);
+            return r && b.status === "locked" ? { ...b, status: r.outcome[b.marketId] === b.selectionId ? "won" : "lost" } : b;
+          });
         }
-        return r;
+        return { ...y, now, results, bets, slip: y.slip.filter((l) => !kickedMarkets.has(l.marketId)), log: [...lines.reverse(), ...y.log].slice(0, 400) };
       });
-      if (changed) {
-        const finals = results.filter((r, i) => r.state === "final" && next.results[i].state !== "final");
-        let bets = next.bets;
-        for (const r of finals) {
-          bets = bets.map((b) => (b.eventId === r.eventId && b.status === "locked" ? { ...b, status: r.outcome[b.marketId] === b.selectionId ? "won" : "lost" } : b));
-          const e = next.events.find((v) => v.id === r.eventId)!;
-          next = { ...next, log: addLog(next, "settle", `Window closed with no open dispute: ${e.home} ${r.score} ${e.away} is final, payouts released`) };
-          const mine = bets.filter((b) => b.eventId === r.eventId && b.wallet === ME && b.status === "won");
-          if (mine.length) toast("ok", `${e.home} v ${e.away} is final. Your winnings are ready to claim.`);
-          pulse({ kind: "final" });
-        }
-        next = { ...next, results, bets };
-      }
-      set(() => next);
     }, 1000);
     return () => clearInterval(id);
   }, [d.ready, set, toast]);

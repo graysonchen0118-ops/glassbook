@@ -226,6 +226,9 @@ export function build(now: number): Book {
   });
 
   const markets = events.flatMap((e) => marketsFor(e, now));
+  // a clear favourite, the kind of price that gets mistyped
+  const fav = markets.find((m) => m.id === "ev06-1x2");
+  if (fav) [1.5, 4.1, 6.2].forEach((o, i) => (fav.selections[i].odds = o));
   const byEvent = (id: string) => markets.filter((m) => m.eventId === id);
 
   // results: the four most recent are still inside their dispute window
